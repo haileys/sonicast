@@ -1,0 +1,8 @@
+export SUBSONIC_URL=
+export SUBSONIC_USERNAME=
+export SUBSONIC_PASSWORD=
+export MPD_SOCKET=
+export MUSIC_DIR=
+
+# silence some by-default noisy logs:
+export RUST_LOG=hyper_util=info,reqwest=info
