@@ -1,6 +1,4 @@
 export SUBSONIC_URL=
-export SUBSONIC_USERNAME=
-export SUBSONIC_PASSWORD=
 export MPD_SOCKET=
 
 # silence some by-default noisy logs:

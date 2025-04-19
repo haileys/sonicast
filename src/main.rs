@@ -44,8 +44,6 @@ fn config() -> app::Config {
 fn subsonic() -> subsonic::Config {
     subsonic::Config {
         base_url: env("SUBSONIC_URL"),
-        username: env("SUBSONIC_USERNAME"),
-        password: env("SUBSONIC_PASSWORD"),
     }
 }
 

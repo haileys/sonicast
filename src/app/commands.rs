@@ -133,7 +133,7 @@ pub struct AddToQueue {
 }
 
 async fn add_to_queue(session: &Session, params: AddToQueue) -> Result<()> {
-    let track_paths = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
+    let track_paths = helper::track_urls(&session.subsonic, &params.tracks)?;
 
     let mpd = session.mpd().await;
     for path in &track_paths {
@@ -144,7 +144,7 @@ async fn add_to_queue(session: &Session, params: AddToQueue) -> Result<()> {
 }
 
 async fn set_next_in_queue(session: &Session, params: AddToQueue) -> Result<()> {
-    let track_paths = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
+    let track_paths = helper::track_urls(&session.subsonic, &params.tracks)?;
 
     let mut mpd = session.mpd().await;
     helper::atomic_enqueue_tracks(&mut mpd, &track_paths, Some(0)).await?;
@@ -170,7 +170,7 @@ pub async fn queue(session: &Session) -> Result<Queue> {
         .map(|item| item.file.as_str())
         .collect::<Vec<_>>();
 
-    let tracks = helper::load_tracks_for_urls(&session.ctx.subsonic, &urls).await?;
+    let tracks = helper::load_tracks_for_urls(&session.subsonic, &urls).await?;
 
     let current_track = queue.items.iter()
         .position(|item| Some(&item.id) == status.song_id.as_ref());
@@ -192,7 +192,7 @@ pub struct PlayTrackList {
 }
 
 async fn play_track_list(session: &Session, params: PlayTrackList) -> Result<()> {
-    let track_urls = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
+    let track_urls = helper::track_urls(&session.subsonic, &params.tracks)?;
 
     let mpd = session.mpd().await;
 

@@ -5,32 +5,61 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
-pub struct Subsonic {
+pub struct SubsonicBase {
     inner: Arc<Inner>,
 }
 
 struct Inner {
     client: reqwest::Client,
-    config: Config,
+    base_url: reqwest::Url,
 }
 
 #[derive(Clone)]
 pub struct Config {
     pub base_url: reqwest::Url,
-    pub username: String,
-    pub password: String,
 }
 
-impl Subsonic {
+#[derive(Debug, Deserialize, Serialize)]
+pub struct AuthParams {
+    #[serde(rename = "u")]
+    username: Option<String>,
+    #[serde(rename = "s")]
+    salt: Option<String>,
+    #[serde(rename = "t")]
+    token: Option<String>,
+    #[serde(rename = "p")]
+    password: Option<String>,
+}
+
+impl SubsonicBase {
     pub fn new(config: &Config) -> Self {
-        Subsonic {
+        SubsonicBase {
             inner: Arc::new(Inner {
                 client: reqwest::Client::new(),
-                config: config.clone(),
+                base_url: config.base_url.clone(),
             }),
         }
     }
 
+    pub async fn authenticate(&self, params: AuthParams) -> Result<Subsonic> {
+        let subsonic = Subsonic {
+            inner: self.inner.clone(),
+            auth: Arc::new(params),
+        };
+
+        // test auth details:
+        subsonic.ping().await?;
+
+        Ok(subsonic)
+    }
+}
+
+pub struct Subsonic {
+    inner: Arc<Inner>,
+    auth: Arc<AuthParams>,
+}
+
+impl Subsonic {
     #[allow(unused)]
     pub async fn ping(&self) -> Result<()> {
         self.call::<serde_json::Value>("ping", &[]).await?;
@@ -63,24 +92,6 @@ impl Subsonic {
         Ok(response.data.song)
     }
 
-    // pub async fn get_file_path(&self, id: &TrackId) -> Result<String> {
-    //     let response: SubsonicResponse<GetSong>
-    //         = self.call("getSong", &[("id", &id.0)]).await?;
-
-    //     #[derive(Deserialize, Debug)]
-    //     struct GetSong {
-    //         song: Track,
-    //     }
-
-    //     let absolute_path = format!("{}{}{}",
-    //         self.inner.config.music_dir,
-    //         std::path::MAIN_SEPARATOR_STR,
-    //         response.data.song.path,
-    //     );
-
-    //     Ok(absolute_path)
-    // }
-
     pub fn stream_url(&self, id: &TrackId) -> Result<Url> {
         let req = self
             .request(Method::GET, "rest/stream")
@@ -109,11 +120,11 @@ impl Subsonic {
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
-        let url = self.inner.config.base_url.join(path).unwrap();
+        let url = self.inner.base_url.join(path).unwrap();
+
         self.inner.client.request(method, url)
+            .query(&*self.auth)
             .query(&[
-                ("u", self.inner.config.username.as_str()),
-                ("p", self.inner.config.password.as_str()),
                 ("f", "json"),
                 ("c", "sonicast"),
                 ("v", env!("CARGO_PKG_VERSION")),
@@ -123,38 +134,15 @@ impl Subsonic {
 
 #[derive(Deserialize, Debug)]
 struct SubsonicResponse<T> {
-    #[serde(
-        rename = "subsonic-response",
-        // deserialize_with = "deserialize_subsonic_response_data",
-    )]
+    #[serde(rename = "subsonic-response")]
     data: T,
 }
-
-// fn deserialize_subsonic_response_data<'de, D, T>(de: D) -> Result<T, D::Error>
-//     where D: Deserializer<'de>, T: Deserialize<'de> + DeserializeOwned
-// {
-//     let value = serde_json::Value::deserialize(de)?;
-
-//     match serde_json::from_value(value) {
-//         Ok(value) => Ok(value),
-//         Err(err) => {
-//             log::error!("failed to deserialize {}", std::any::type_name::<T>())
-//         }
-//     }
-// }
 
 #[derive(Deserialize, Debug)]
 struct Tracks {
     #[serde(rename = "song")]
     tracks: Vec<Track>,
-    // #[serde(flatten)]
-    // tracks: serde_json::Value,
 }
-
-// #[derive(Deserialize)]
-// struct Song {
-//     song: Track,
-// }
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Track {

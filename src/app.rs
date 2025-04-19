@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use crate::mpd::{self, Mpd};
-use crate::subsonic::{self, Subsonic};
+use crate::subsonic::{self, AuthParams, Subsonic, SubsonicBase};
 use crate::util::broken_pipe;
 
 use anyhow::Result;
@@ -10,10 +10,12 @@ use axum::extract::State;
 use axum::extract::ws::{self, WebSocket, WebSocketUpgrade};
 use axum::http::Method;
 use axum::response::IntoResponse;
+use axum::Form;
 use futures::{future, Stream};
 use futures::sink::SinkExt;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{pin_mut, StreamExt};
+use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, RwLockWriteGuard, Mutex as AsyncMutex};
 use tower_http::cors::{Any, CorsLayer};
@@ -35,12 +37,12 @@ pub async fn run(config: &Config) -> Result<()> {
 
     // open clients, including two mpd connections
     //  - one for commands, the other for events
-    let subsonic = Subsonic::new(&config.subsonic);
+    let subsonic = SubsonicBase::new(&config.subsonic);
     let mpd = Mpd::connect(&config.mpd).await?;
     let mpd_event = Mpd::connect(&config.mpd).await?;
 
     let mpd = Arc::new(RwLock::new(mpd));
-    let ctx = Ctx::new(CtxData {
+    let ctx = Ctx::new(AppData {
         subsonic,
         mpd,
         events: events::MpdEvents::default(),
@@ -64,24 +66,37 @@ pub async fn run(config: &Config) -> Result<()> {
     Ok(())
 }
 
-pub type Ctx = Arc<CtxData>;
+pub type Ctx = Arc<AppData>;
 
-pub struct CtxData {
-    subsonic: Subsonic,
+pub struct AppData {
+    subsonic: SubsonicBase,
     mpd: Arc<RwLock<Mpd>>,
     events: events::MpdEvents,
 }
 
-async fn websocket(ws: WebSocketUpgrade, ctx: State<Ctx>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| run_websocket(ctx.0, socket))
+async fn websocket(
+    ctx: State<Ctx>,
+    ws: WebSocketUpgrade,
+    auth: Form<AuthParams>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let subsonic = ctx.subsonic.authenticate(auth.0).await
+        .map_err(|err| {
+            log::warn!("subsonic authenticate: {err:?}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    Ok(ws.on_upgrade(move |socket| {
+        run_websocket(ctx.0, socket, subsonic)
+    }))
 }
 
-async fn run_websocket(ctx: Ctx, socket: WebSocket) {
+async fn run_websocket(ctx: Ctx, socket: WebSocket, subsonic: Subsonic) {
     let (tx, rx) = socket.split();
 
     let session = Session {
         ctx,
         tx: Sender::new(tx),
+        subsonic,
     };
 
     let receive_task = receive_task(&session, rx);
@@ -146,6 +161,7 @@ fn message_stream(rx: SplitStream<WebSocket>) -> impl Stream<Item = ClientMsg> {
 pub struct Session {
     ctx: Ctx,
     tx: Sender,
+    subsonic: Subsonic,
 }
 
 impl Session {
