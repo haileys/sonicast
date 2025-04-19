@@ -2,8 +2,6 @@ use std::pin::Pin;
 use std::time::Duration;
 
 use anyhow::Result;
-use axum::extract::State;
-use axum::Json;
 use futures::{future, pin_mut};
 use serde::Serialize;
 use tokio::sync::watch;
@@ -108,8 +106,8 @@ async fn queue_event_common(session: &Session, watch: watch::Sender<()>) -> Resu
     let mut watch = watch.subscribe();
 
     while watch.changed().await.is_ok() {
-        match commands::queue(State(session.ctx())).await {
-            Ok(Json(queue)) => {
+        match commands::queue(session).await {
+            Ok(queue) => {
                 let msg = ServerMsg::Queue(QueueEvent(queue));
                 session.tx.send(msg).await;
             }

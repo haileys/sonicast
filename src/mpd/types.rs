@@ -128,3 +128,12 @@ impl Status {
         })
     }
 }
+
+#[derive(Deserialize, Debug, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+pub enum ReplayGainMode {
+    None,
+    Track,
+    Album,
+    Auto,
+}

@@ -11,12 +11,11 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use derive_more::Display;
 use protocol::OkResponse;
-use serde::Deserialize;
 use tokio::net::UnixStream;
 use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use protocol::{MpdReader, MpdWriter, Protocol, Response, Attributes};
-use types::{Changed, Id, Playlist, PlaylistItem, Status};
+use types::{Changed, Id, Playlist, PlaylistItem, ReplayGainMode, Status};
 
 const KEEPALIVE_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -180,15 +179,6 @@ impl Mpd {
         self.conn.command("replay_gain_mode", &[mode]).await?;
         Ok(())
     }
-}
-
-#[derive(Deserialize, Clone, Copy)]
-#[serde(rename_all = "lowercase")]
-pub enum ReplayGainMode {
-    None,
-    Track,
-    Album,
-    Auto,
 }
 
 fn position(pos: isize) -> String {

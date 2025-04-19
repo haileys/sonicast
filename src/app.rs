@@ -8,14 +8,13 @@ use anyhow::Result;
 use async_stream::stream;
 use axum::extract::State;
 use axum::extract::ws::{self, WebSocket, WebSocketUpgrade};
-use axum::http::{Method, StatusCode};
+use axum::http::Method;
 use axum::response::IntoResponse;
 use futures::{future, Stream};
 use futures::sink::SinkExt;
 use futures::stream::{SplitSink, SplitStream};
 use futures::{pin_mut, StreamExt};
 use serde::{Deserialize, Serialize};
-use thiserror::Error;
 use tokio::sync::{RwLock, RwLockWriteGuard, Mutex as AsyncMutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower::ServiceBuilder;
@@ -32,7 +31,7 @@ pub struct Config {
 
 pub async fn run(config: &Config) -> Result<()> {
     use axum::Router;
-    use axum::routing::{get, post};
+    use axum::routing::get;
 
     // open clients, including two mpd connections
     //  - one for commands, the other for events
@@ -57,19 +56,6 @@ pub async fn run(config: &Config) -> Result<()> {
 
     let app = Router::new()
         .route("/ws", get(websocket))
-        .route("/queue", get(commands::queue))
-        .route("/play-track-list", post(commands::play_track_list))
-        .route("/reset-queue", post(commands::reset_queue))
-        .route("/clear-queue", post(commands::clear_queue))
-        .route("/add-to-queue", post(commands::add_to_queue))
-        .route("/set-next-in-queue", post(commands::set_next_in_queue))
-        .route("/remove-from-queue", post(commands::remove_from_queue))
-        .route("/shuffle-queue", post(commands::shuffle_queue))
-        .route("/replay-gain-mode", post(commands::replay_gain_mode))
-        .route("/set-repeat", post(commands::set_repeat))
-        .route("/set-shuffle", post(commands::set_shuffle))
-        .route("/set-volume", post(commands::set_volume))
-        .route("/set-playback-rate", post(commands::set_playback_rate))
         .layer(ServiceBuilder::new().layer(cors))
         .with_state(ctx);
 
@@ -85,19 +71,6 @@ pub struct CtxData {
     mpd: Arc<RwLock<Mpd>>,
     events: events::MpdEvents,
 }
-
-#[derive(Debug, Error)]
-#[error(transparent)]
-struct AppError(#[from] anyhow::Error);
-
-impl IntoResponse for AppError {
-    fn into_response(self) -> axum::response::Response {
-        log::error!("{}", self.0);
-        StatusCode::INTERNAL_SERVER_ERROR.into_response()
-    }
-}
-
-type AppResult<T> = Result<T, AppError>;
 
 async fn websocket(ws: WebSocketUpgrade, ctx: State<Ctx>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| run_websocket(ctx.0, socket))
@@ -176,10 +149,6 @@ pub struct Session {
 }
 
 impl Session {
-    pub fn ctx(&self) -> Ctx {
-        self.ctx.clone()
-    }
-
     pub async fn mpd(&self) -> RwLockWriteGuard<'_, Mpd> {
         self.ctx.mpd.write().await
     }

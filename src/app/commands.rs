@@ -1,8 +1,7 @@
 use anyhow::{Result, Context};
-use axum::extract::{Json, State};
 use serde::{Deserialize, Serialize};
 
-use crate::app::{AppResult, Ctx, Session, Command, helper};
+use crate::app::{Session, Command, helper};
 use crate::mpd::{self, Mpd};
 use crate::mpd::types::PlayerState;
 use crate::subsonic::{Track, TrackId};
@@ -64,6 +63,19 @@ commands! {
     SkipPrevious: skip_previous() => ();
     Seek: seek(Seek) => ();
     PlayIndex: play_index(PlayIndex) => ();
+    ResetQueue: reset_queue() => ();
+    ClearQueue: clear_queue() => ();
+    AddToQueue: add_to_queue(AddToQueue) => ();
+    SetNextInQueue: set_next_in_queue(AddToQueue) => ();
+    Queue: queue() => Queue;
+    PlayTrackList: play_track_list(PlayTrackList) => ();
+    RemoveFromQueue: remove_from_queue(RemoveFromQueue) => ();
+    ShuffleQueue: shuffle_queue() => ();
+    ReplayGainMode: replay_gain_mode(ReplayGainMode) => ();
+    SetRepeat: set_repeat(SetRepeat) => ();
+    SetShuffle: set_shuffle(SetShuffle) => ();
+    SetVolume: set_volume(SetVolume) => ();
+    SetPlaybackRate: set_playback_rate(SetPlaybackRate) => ();
 }
 
 async fn play(session: &Session) -> Result<()> {
@@ -107,48 +119,38 @@ async fn play_index(session: &Session, param: PlayIndex) -> Result<()> {
     mpd.playpos(param.index).await
 }
 
-enum Op {
-    Next,
-    Previous,
-    Seek(f64),
+async fn reset_queue(session: &Session) -> Result<()> {
+    session.mpd().await.stop().await
 }
 
-// this function is necessary to work around some weird mpd bug where on
-// next/previous/seek etc it winds up stuck, despite showing state = play
-async fn player_op(mpd: &mut Mpd, op: Op) -> anyhow::Result<()> {
-    let state = mpd.status().await?.state;
-    mpd.pause().await?;
+async fn clear_queue(session: &Session) -> Result<()> {
+    session.mpd().await.clear().await
+}
 
-    match op {
-        Op::Next => { mpd.next().await? }
-        Op::Previous => { mpd.previous().await? }
-        Op::Seek(pos) => { mpd.seekcur(pos).await? }
-    }
+#[derive(Deserialize, Debug)]
+pub struct AddToQueue {
+    tracks: Vec<TrackId>,
+}
 
-    if state == PlayerState::Play {
-        mpd.play().await?;
+async fn add_to_queue(session: &Session, params: AddToQueue) -> Result<()> {
+    let track_paths = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
+
+    let mpd = session.mpd().await;
+    for path in &track_paths {
+        mpd.addid(path).await?;
     }
 
     Ok(())
 }
 
-// #[derive(Debug, Deserialize)]
-// #[serde(rename_all = "kebab-case", tag = "cmd", content = "arg")]
-// pub enum CommandKind {
-//     Play,
-//     Pause,
-//     SkipNext,
-//     SkipPrevious,
-// }
+async fn set_next_in_queue(session: &Session, params: AddToQueue) -> Result<()> {
+    let track_paths = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
 
-// #[derive(Debug, Serialize)]
-// #[serde(rename_all = "kebab-case", tag = "cmd", content = "data")]
-// pub enum ResponseKind {
-//     Play(()),
-//     Pause(()),
-//     SkipNext(()),
-//     SkipPrevious(()),
-// }
+    let mut mpd = session.mpd().await;
+    helper::atomic_enqueue_tracks(&mut mpd, &track_paths, Some(0)).await?;
+
+    Ok(())
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -158,8 +160,8 @@ pub struct Queue {
     current_track_position: Option<f64>,
 }
 
-pub async fn queue(ctx: State<Ctx>) -> AppResult<Json<Queue>> {
-    let mpd = ctx.mpd.read().await;
+pub async fn queue(session: &Session) -> Result<Queue> {
+    let mpd = session.mpd().await;
     let queue = mpd.playlistinfo().await?;
     let status = mpd.status().await?;
     drop(mpd);
@@ -168,31 +170,31 @@ pub async fn queue(ctx: State<Ctx>) -> AppResult<Json<Queue>> {
         .map(|item| item.file.as_str())
         .collect::<Vec<_>>();
 
-    let tracks = helper::load_tracks_for_urls(&ctx.subsonic, &urls).await?;
+    let tracks = helper::load_tracks_for_urls(&session.ctx.subsonic, &urls).await?;
 
     let current_track = queue.items.iter()
         .position(|item| Some(&item.id) == status.song_id.as_ref());
 
     let current_track_position = status.elapsed.map(|sec| sec.0);
 
-    Ok(Json(Queue {
+    Ok(Queue {
         tracks,
         current_track,
         current_track_position,
-    }))
+    })
 }
 
-#[derive(Deserialize)]
-pub struct PlayTrackListParams {
+#[derive(Deserialize, Debug)]
+pub struct PlayTrackList {
     tracks: Vec<TrackId>,
     index: Option<usize>,
     shuffle: Option<bool>,
 }
 
-pub async fn play_track_list(ctx: State<Ctx>, params: Json<PlayTrackListParams>) -> AppResult<()> {
-    let track_urls = helper::track_urls(&ctx.subsonic, &params.tracks)?;
+async fn play_track_list(session: &Session, params: PlayTrackList) -> Result<()> {
+    let track_urls = helper::track_urls(&session.ctx.subsonic, &params.tracks)?;
 
-    let mpd = ctx.mpd.write().await;
+    let mpd = session.mpd().await;
 
     // first clear the playlist
     mpd.clear().await?;
@@ -217,50 +219,13 @@ pub async fn play_track_list(ctx: State<Ctx>, params: Json<PlayTrackListParams>)
     Ok(())
 }
 
-pub async fn reset_queue(ctx: State<Ctx>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.stop().await?;
-    Ok(())
-}
-
-pub async fn clear_queue(ctx: State<Ctx>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.clear().await?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct AddToQueueParams {
-    tracks: Vec<TrackId>,
-}
-
-pub async fn add_to_queue(ctx: State<Ctx>, params: Json<AddToQueueParams>) -> AppResult<()> {
-    let track_paths = helper::track_urls(&ctx.subsonic, &params.tracks)?;
-
-    let mpd = ctx.mpd.write().await;
-    for path in &track_paths {
-        mpd.addid(path).await?;
-    }
-
-    Ok(())
-}
-
-pub async fn set_next_in_queue(ctx: State<Ctx>, params: Json<AddToQueueParams>) -> AppResult<()> {
-    let track_paths = helper::track_urls(&ctx.subsonic, &params.tracks)?;
-
-    let mut mpd = ctx.mpd.write().await;
-    helper::atomic_enqueue_tracks(&mut mpd, &track_paths, Some(0)).await?;
-
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct RemoveFromQueueParams {
+#[derive(Deserialize, Debug)]
+pub struct RemoveFromQueue {
     index: usize,
 }
 
-pub async fn remove_from_queue(ctx: State<Ctx>, params: Json<RemoveFromQueueParams>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
+async fn remove_from_queue(session: &Session, params: RemoveFromQueue) -> Result<()> {
+    let mpd = session.mpd().await;
 
     if let Some(pos) = isize::try_from(params.index).ok() {
         mpd.delete(pos).await?;
@@ -269,61 +234,78 @@ pub async fn remove_from_queue(ctx: State<Ctx>, params: Json<RemoveFromQueuePara
     Ok(())
 }
 
-pub async fn shuffle_queue(ctx: State<Ctx>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.shuffle().await?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct ReplayGainModeParams {
-    mode: mpd::ReplayGainMode,
-}
-
-pub async fn replay_gain_mode(ctx: State<Ctx>, params: Json<ReplayGainModeParams>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.replay_gain_mode(params.mode).await?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct SetRepeatParams {
-    repeat: bool,
-}
-
-pub async fn set_repeat(ctx: State<Ctx>, params: Json<SetRepeatParams>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.repeat(params.repeat).await?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct SetShuffleParams {
-    shuffle: bool,
-}
-
-pub async fn set_shuffle(ctx: State<Ctx>, params: Json<SetShuffleParams>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.random(params.shuffle).await?;
-    Ok(())
+async fn shuffle_queue(session: &Session) -> Result<()> {
+    session.mpd().await.shuffle().await
 }
 
 #[derive(Deserialize, Debug)]
-pub struct SetVolumeParams {
+pub struct ReplayGainMode {
+    mode: mpd::types::ReplayGainMode,
+}
+
+async fn replay_gain_mode(session: &Session, params: ReplayGainMode) -> Result<()> {
+    session.mpd().await.replay_gain_mode(params.mode).await
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SetRepeat {
+    repeat: bool,
+}
+
+async fn set_repeat(session: &Session, params: SetRepeat) -> Result<()> {
+    session.mpd().await.repeat(params.repeat).await
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SetShuffle {
+    shuffle: bool,
+}
+
+async fn set_shuffle(session: &Session, params: SetShuffle) -> Result<()> {
+    session.mpd().await.random(params.shuffle).await
+}
+
+#[derive(Deserialize, Debug)]
+pub struct SetVolume {
     #[allow(unused)]
     volume: f64
 }
 
-pub async fn set_volume(_ctx: State<Ctx>, params: Json<SetVolumeParams>) -> AppResult<()> {
-    todo!("set-volume: {params:?}");
+async fn set_volume(_session: &Session, params: SetVolume) -> Result<()> {
+    todo!("set-volume: {params:?}")
 }
 
 #[derive(Deserialize, Debug)]
-pub struct SetPlaybackRateParams {
+pub struct SetPlaybackRate {
     #[allow(unused)]
     rate: f64
 }
 
-pub async fn set_playback_rate(_ctx: State<Ctx>, params: Json<SetPlaybackRateParams>) -> AppResult<()> {
-    todo!("set-playback-rate: {params:?}");
+async fn set_playback_rate(_session: &Session, params: SetPlaybackRate) -> Result<()> {
+    todo!("set-playback-rate: {params:?}")
+}
+
+enum Op {
+    Next,
+    Previous,
+    Seek(f64),
+}
+
+// this function is necessary to work around some weird mpd bug where on
+// next/previous/seek etc it winds up stuck, despite showing state = play
+async fn player_op(mpd: &mut Mpd, op: Op) -> anyhow::Result<()> {
+    let state = mpd.status().await?.state;
+    mpd.pause().await?;
+
+    match op {
+        Op::Next => { mpd.next().await? }
+        Op::Previous => { mpd.previous().await? }
+        Op::Seek(pos) => { mpd.seekcur(pos).await? }
+    }
+
+    if state == PlayerState::Play {
+        mpd.play().await?;
+    }
+
+    Ok(())
 }
