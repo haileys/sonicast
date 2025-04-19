@@ -1,21 +1,11 @@
-use std::borrow::Cow;
-use std::collections::VecDeque;
 use std::convert::Infallible;
-use std::ops::Range;
-use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
-use anyhow::{bail, Context, Error, Result};
-use derive_more::{Display, FromStr};
+use anyhow::{bail, Result};
+use derive_more::FromStr;
 use serde::{Serialize, Deserialize};
-use tokio::net::UnixStream;
-use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
-use tokio::task::AbortHandle;
-use url::{Position, Url};
 
-use crate::mpd::protocol::{MpdReader, MpdWriter, Protocol, Response, OkResponse, Attributes};
+use crate::mpd::protocol::Attributes;
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct Id(String);
@@ -42,9 +32,12 @@ pub struct Playlist {
 #[derive(Debug, Clone)]
 pub struct PlaylistItem {
     pub file: String,
+    #[allow(unused)]
     pub pos: i64,
     pub id: Id,
+    #[allow(unused)]
     pub name: Option<String>,
+    #[allow(unused)]
     pub title: Option<String>,
 }
 
@@ -110,6 +103,7 @@ pub struct Status {
     pub song_id: Option<Id>,
     pub elapsed: Option<Seconds>,
     pub duration: Option<Seconds>,
+    #[allow(unused)]
     pub audio_format: Option<String>,
     pub playlist_version: u32,
 }

@@ -1,9 +1,8 @@
-use std::{path::PathBuf, sync::Arc};
+use std::sync::Arc;
 
-use derive_more::Display;
 use reqwest::{Method, Url};
 use anyhow::Result;
-use serde::{de::DeserializeOwned, Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
 pub struct Subsonic {
@@ -22,6 +21,7 @@ pub struct Config {
     pub password: String,
     // this is not a PathBuf because we need to enforce utf-8 encoding on
     // file paths in this app. so String is the appropriate type
+    #[allow(unused)]
     pub music_dir: String,
 }
 
@@ -35,11 +35,13 @@ impl Subsonic {
         }
     }
 
+    #[allow(unused)]
     pub async fn ping(&self) -> Result<()> {
         self.call::<serde_json::Value>("ping", &[]).await?;
         Ok(())
     }
 
+    #[allow(unused)]
     pub async fn get_random_songs(&self) -> Result<Vec<Track>> {
         let response: SubsonicResponse<RandomSongs>
             = self.call("getRandomSongs", &[]).await?;

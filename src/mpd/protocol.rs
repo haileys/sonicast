@@ -112,6 +112,7 @@ pub struct ErrorResponse {
 #[derive(Debug)]
 pub struct OkResponse {
     pub attributes: Attributes,
+    #[allow(unused)]
     pub binary: Option<Vec<u8>>,
 }
 

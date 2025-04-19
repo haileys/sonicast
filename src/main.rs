@@ -9,6 +9,7 @@ use anyhow::Result;
 mod app;
 mod mpd;
 mod subsonic;
+mod util;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -1,10 +1,154 @@
+use anyhow::{Result, Context};
 use axum::extract::{Json, State};
 use serde::{Deserialize, Serialize};
 
-use crate::app::{AppResult, Ctx, helper};
+use crate::app::{AppResult, Ctx, Session, Command, helper};
 use crate::mpd::{self, Mpd};
 use crate::mpd::types::PlayerState;
 use crate::subsonic::{Track, TrackId};
+
+use super::{Response, ServerMsg};
+
+macro_rules! commands {
+    { $( $variant:ident : $func:ident ( $( $param:ty )? ) => $result:ty ; )* } => {
+        #[derive(Debug, Deserialize)]
+        #[serde(rename_all = "kebab-case", tag = "command", content = "arg")]
+        pub enum CommandKind {
+            $( $variant $( ( $param ) )?, )*
+        }
+
+        #[derive(Debug, Serialize)]
+        #[serde(rename_all = "kebab-case", tag = "response", content = "data")]
+        pub enum ResponseKind {
+            Error { message: String },
+            $( $variant ( $result ), )*
+        }
+
+        async fn dispatch_kind(session: &Session, command: CommandKind) -> Result<ResponseKind> {
+            let command_name;
+            let result = match command {
+                $(
+                    CommandKind::$variant $( ( commands!{@param_var param: $param} ) )? => {
+                        command_name = stringify!($variant);
+                        $func(session $(, commands!{@param_var param: $param} )? ).await
+                            .map(ResponseKind::$variant)
+                    }
+                )*
+            };
+            result.with_context(|| format!("dispatching command {command_name}"))
+        }
+    };
+
+    // special internal rule to allow for $()? expansions of param
+    // without including $param in macro output
+    { @param_var $param_ident:ident : $param_ty:ty } => { $param_ident };
+}
+
+pub async fn dispatch(session: &Session, command: Command) {
+    let kind = match dispatch_kind(session, command.kind).await {
+        Ok(kind) => kind,
+        Err(err) => {
+            log::error!("dispatching command: {err}");
+            ResponseKind::Error { message: format!("{err}") }
+        }
+    };
+
+    let response = Response { seq: command.seq, kind };
+    session.tx.send(ServerMsg::Response(response)).await;
+}
+
+commands! {
+    Play: play() => ();
+    Pause: pause() => ();
+    SkipNext: skip_next() => ();
+    SkipPrevious: skip_previous() => ();
+    Seek: seek(Seek) => ();
+    PlayIndex: play_index(PlayIndex) => ();
+}
+
+async fn play(session: &Session) -> Result<()> {
+    let mpd = session.mpd().await;
+    mpd.play().await
+}
+
+async fn pause(session: &Session) -> Result<()> {
+    let mpd = session.mpd().await;
+    mpd.pause().await
+}
+
+async fn skip_next(session: &Session) -> Result<()> {
+    let mut mpd = session.mpd().await;
+    player_op(&mut mpd, Op::Next).await
+}
+
+async fn skip_previous(session: &Session) -> Result<()> {
+    let mut mpd = session.mpd().await;
+    player_op(&mut mpd, Op::Previous).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Seek {
+    #[serde(rename = "pos")]
+    position: f64,
+}
+
+async fn seek(session: &Session, param: Seek) -> Result<()> {
+    let mut mpd = session.mpd().await;
+    player_op(&mut mpd, Op::Seek(param.position)).await
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayIndex {
+    index: usize,
+}
+
+async fn play_index(session: &Session, param: PlayIndex) -> Result<()> {
+    let mpd = session.mpd().await;
+    mpd.playpos(param.index).await
+}
+
+enum Op {
+    Next,
+    Previous,
+    Seek(f64),
+}
+
+// this function is necessary to work around some weird mpd bug where on
+// next/previous/seek etc it winds up stuck, despite showing state = play
+async fn player_op(mpd: &mut Mpd, op: Op) -> anyhow::Result<()> {
+    let state = mpd.status().await?.state;
+    mpd.pause().await?;
+
+    match op {
+        Op::Next => { mpd.next().await? }
+        Op::Previous => { mpd.previous().await? }
+        Op::Seek(pos) => { mpd.seekcur(pos).await? }
+    }
+
+    if state == PlayerState::Play {
+        mpd.play().await?;
+    }
+
+    Ok(())
+}
+
+// #[derive(Debug, Deserialize)]
+// #[serde(rename_all = "kebab-case", tag = "cmd", content = "arg")]
+// pub enum CommandKind {
+//     Play,
+//     Pause,
+//     SkipNext,
+//     SkipPrevious,
+// }
+
+// #[derive(Debug, Serialize)]
+// #[serde(rename_all = "kebab-case", tag = "cmd", content = "data")]
+// pub enum ResponseKind {
+//     Play(()),
+//     Pause(()),
+//     SkipNext(()),
+//     SkipPrevious(()),
+// }
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -78,58 +222,33 @@ pub struct PlayPosParams {
     index: usize,
 }
 
-pub async fn play_index(ctx: State<Ctx>, params: Json<PlayPosParams>) -> AppResult<()> {
+pub async fn post_play_index(ctx: State<Ctx>, params: Json<PlayPosParams>) -> AppResult<()> {
     let mpd = ctx.mpd.write().await;
     mpd.playpos(params.index).await?;
     Ok(())
 }
 
-pub async fn play(ctx: State<Ctx>) -> AppResult<()> {
+pub async fn post_play(ctx: State<Ctx>) -> AppResult<()> {
     let mpd = ctx.mpd.write().await;
     mpd.play().await?;
     Ok(())
 }
 
-pub async fn pause(ctx: State<Ctx>) -> AppResult<()> {
+pub async fn post_pause(ctx: State<Ctx>) -> AppResult<()> {
     let mpd = ctx.mpd.write().await;
     mpd.pause().await?;
     Ok(())
 }
 
-enum Op {
-    Next,
-    Previous,
-    Seek(f64),
-}
-
-// this function is necessary to work around some weird mpd bug where on
-// next/previous/seek etc it winds up stuck, despite showing state = play
-async fn play_op(mpd: &mut Mpd, op: Op) -> anyhow::Result<()> {
-    let state = mpd.status().await?.state;
-    mpd.pause().await?;
-
-    match op {
-        Op::Next => { mpd.next().await? }
-        Op::Previous => { mpd.previous().await? }
-        Op::Seek(pos) => { mpd.seekcur(pos).await? }
-    }
-
-    if state == PlayerState::Play {
-        mpd.play().await?;
-    }
-
+pub async fn post_next(ctx: State<Ctx>) -> AppResult<()> {
+    let mut mpd = ctx.mpd.write().await;
+    player_op(&mut mpd, Op::Next).await?;
     Ok(())
 }
 
-pub async fn next(ctx: State<Ctx>) -> AppResult<()> {
+pub async fn post_previous(ctx: State<Ctx>) -> AppResult<()> {
     let mut mpd = ctx.mpd.write().await;
-    play_op(&mut mpd, Op::Next).await?;
-    Ok(())
-}
-
-pub async fn previous(ctx: State<Ctx>) -> AppResult<()> {
-    let mut mpd = ctx.mpd.write().await;
-    play_op(&mut mpd, Op::Previous).await?;
+    player_op(&mut mpd, Op::Previous).await?;
     Ok(())
 }
 
@@ -138,9 +257,9 @@ pub struct SeekParams {
     pos: f64
 }
 
-pub async fn seek(ctx: State<Ctx>, params: Json<SeekParams>) -> AppResult<()> {
+pub async fn post_seek(ctx: State<Ctx>, params: Json<SeekParams>) -> AppResult<()> {
     let mut mpd = ctx.mpd.write().await;
-    play_op(&mut mpd, Op::Seek(params.pos)).await?;
+    player_op(&mut mpd, Op::Seek(params.pos)).await?;
     Ok(())
 }
 
@@ -237,6 +356,7 @@ pub async fn set_shuffle(ctx: State<Ctx>, params: Json<SetShuffleParams>) -> App
 
 #[derive(Deserialize, Debug)]
 pub struct SetVolumeParams {
+    #[allow(unused)]
     volume: f64
 }
 
@@ -246,6 +366,7 @@ pub async fn set_volume(_ctx: State<Ctx>, params: Json<SetVolumeParams>) -> AppR
 
 #[derive(Deserialize, Debug)]
 pub struct SetPlaybackRateParams {
+    #[allow(unused)]
     rate: f64
 }
 

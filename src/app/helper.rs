@@ -5,8 +5,6 @@ use url::Url;
 use crate::mpd::Mpd;
 use crate::subsonic::{Subsonic, Track, TrackId};
 
-use super::Ctx;
-
 async fn gather<T>(iter: impl Iterator<Item = impl Future<Output = Result<T>>>) -> Result<Vec<T>> {
     iter.collect::<FuturesOrdered<_>>()
         .try_collect()

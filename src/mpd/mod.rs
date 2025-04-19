@@ -3,21 +3,17 @@ pub mod types;
 
 use std::borrow::Cow;
 use std::collections::VecDeque;
-use std::convert::Infallible;
 use std::ops::Range;
 use std::path::PathBuf;
-use std::str::FromStr;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context, Error, Result};
-use derive_more::{Display, FromStr};
+use anyhow::{Context, Result};
+use derive_more::Display;
 use protocol::OkResponse;
-use serde::{Serialize, Deserialize};
+use serde::Deserialize;
 use tokio::net::UnixStream;
-use tokio::sync::{oneshot, watch, Mutex as AsyncMutex};
-use tokio::task::AbortHandle;
-use url::{Position, Url};
+use tokio::sync::{oneshot, Mutex as AsyncMutex};
 
 use protocol::{MpdReader, MpdWriter, Protocol, Response, Attributes};
 use types::{Changed, Id, Playlist, PlaylistItem, Status};
@@ -51,6 +47,7 @@ impl Mpd {
         Ok(())
     }
 
+    #[allow(unused)]
     pub async fn deleteid(&self, id: &Id) -> Result<()> {
         self.conn.command("deleteid", &[id.as_str()]).await?;
         Ok(())
@@ -74,7 +71,7 @@ impl Mpd {
     }
 
     pub async fn playlistclear(&self, name: &str) -> Result<()> {
-        self.conn.command("playlistclear", &[]).await?;
+        self.conn.command("playlistclear", &[name]).await?;
         Ok(())
     }
 
@@ -114,6 +111,7 @@ impl Mpd {
         Ok(())
     }
 
+    #[allow(unused)]
     pub async fn playid(&self, id: Id) -> Result<()> {
         self.conn.command("playid", &[id.as_str()]).await?;
         Ok(())
@@ -150,6 +148,7 @@ impl Mpd {
         Ok(Status::from_attributes(&resp.attributes)?)
     }
 
+    #[allow(unused)]
     pub async fn playlistid(&self, id: &Id) -> Result<PlaylistItem> {
         let resp = self.conn.command("playlistid", &[id.as_str()]).await?;
         parse_playlist_item(resp.attributes)
@@ -314,7 +313,7 @@ async fn conn_reader(mut reader: MpdReader, shared: Arc<ConnShared>) {
 
         let mut queue = shared.queue.lock().await;
         let Some(front) = queue.pop_front() else { unreachable!() };
-        front.finish.send(response);
+        let _ = front.finish.send(response);
     }
 }
 
