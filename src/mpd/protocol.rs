@@ -129,6 +129,14 @@ impl Attributes {
             .with_context(|| format!("malformed {name} attribute"))?)
     }
 
+    pub fn get_bool(&self, name: &str) -> anyhow::Result<bool> {
+        let value: Option<usize> = self.get_opt(name)?;
+        match value {
+            None => Ok(false),
+            Some(value) => Ok(value != 0),
+        }
+    }
+
     pub fn get_opt<T: FromStr<Err = E>, E: Send + Sync + std::error::Error + 'static>(&self, name: &str) -> anyhow::Result<Option<T>> {
         self.get_one(name)
             .map(|value| value.parse().with_context(|| format!("malformed {name} attribute")))

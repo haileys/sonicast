@@ -73,6 +73,8 @@ impl Changed {
 pub enum MpdEvent {
     Playlist,
     Player,
+    Options,
+    Mixer,
 }
 
 impl FromStr for MpdEvent {
@@ -82,6 +84,8 @@ impl FromStr for MpdEvent {
         match s {
             "player" => Ok(MpdEvent::Player),
             "playlist" => Ok(MpdEvent::Playlist),
+            "options" => Ok(MpdEvent::Options),
+            "mixer" => Ok(MpdEvent::Mixer),
             _ => Err(()),
         }
     }
@@ -106,6 +110,9 @@ pub struct Status {
     #[allow(unused)]
     pub audio_format: Option<String>,
     pub playlist_version: u32,
+    pub repeat: bool,
+    pub random: bool,
+    pub single: bool,
 }
 
 impl Status {
@@ -125,6 +132,9 @@ impl Status {
             duration: attrs.get_opt("duration")?,
             audio_format: attrs.get_opt("audio")?,
             playlist_version: attrs.get("playlist")?,
+            repeat: attrs.get_bool("repeat")?,
+            random: attrs.get_bool("random")?,
+            single: attrs.get_bool("single")?,
         })
     }
 }

@@ -190,6 +190,7 @@ pub enum ServerMsg {
     Response(Response),
     Playback(events::PlaybackEvent),
     Queue(events::QueueEvent),
+    Options(events::OptionsEvent),
 }
 
 #[derive(Debug, Deserialize)]

@@ -7,7 +7,7 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::mpd::Mpd;
-use crate::mpd::types::{MpdEvent, PlayerState};
+use crate::mpd::types::{MpdEvent, PlayerState, Status};
 use crate::app::ServerMsg;
 
 use super::{commands, Session};
@@ -16,9 +16,9 @@ const PLAYING_INTERVAL: Duration = Duration::from_millis(300);
 
 #[derive(Clone, Default)]
 pub struct MpdEvents {
-    #[allow(unused)]
     queue: watch::Sender<()>,
     status: watch::Sender<()>,
+    options: watch::Sender<()>,
 }
 
 #[derive(Debug, Serialize)]
@@ -29,8 +29,10 @@ pub struct PlaybackEvent {
 }
 
 #[derive(Debug, Serialize)]
-pub struct StatusEvent {
-
+pub struct OptionsEvent {
+    repeat: bool,
+    random: bool,
+    single: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -46,34 +48,16 @@ pub async fn run_events(session: &Session) -> Result<()> {
     let queue_event_task = queue_event_task(session);
     pin_mut!(queue_event_task);
 
+    let options_event_task = options_event_task(session);
+    pin_mut!(options_event_task);
+
     future::select_all([
-        // websocket_task,
         playback_event_task as Pin<&mut (dyn Future<Output = Result<()>> + Send)>,
         status_event_task,
         queue_event_task,
+        options_event_task,
     ]).await.0
 }
-
-/*
-async fn websocket_task(ctx: Ctx, rx: SplitStream<WebSocket>) -> Result<()> {
-    pin_mut!(rx);
-
-    while let Some(item) = rx.next().await {
-        let msg = match item {
-            Ok(msg) => msg,
-            Err(err) if broken_pipe(&err) => { break },
-            Err(err) => {
-                log::warn!("websocket error: {err:?}");
-                break;
-            }
-        };
-
-        let ws::Message::Text(_text) = msg else { continue };
-    }
-
-    Ok(())
-}
-*/
 
 async fn playback_event_task(session: &Session) -> Result<()> {
     loop {
@@ -92,6 +76,29 @@ async fn playback_event_task(session: &Session) -> Result<()> {
 
         tokio::time::sleep(PLAYING_INTERVAL).await;
     }
+}
+
+async fn options_event_task(session: &Session) -> Result<()> {
+    let mut options = session.ctx.events.options.subscribe();
+
+    while options.changed().await.is_ok() {
+        let Some(status) = get_status(&session).await else { continue };
+        let options = OptionsEvent {
+            random: status.random,
+            repeat: status.repeat,
+            single: status.single,
+        };
+        session.tx.send(ServerMsg::Options(options)).await;
+    }
+
+    Ok(())
+}
+
+async fn get_status(session: &Session) -> Option<Status> {
+    let mpd = session.ctx.mpd.read().await;
+    mpd.status().await
+        .inspect_err(|err| { log::warn!("fetching mpd status: {err:?}") })
+        .ok()
 }
 
 async fn status_event_task(session: &Session) -> Result<()> {
@@ -127,22 +134,24 @@ pub async fn task(mpd: Mpd, events: MpdEvents) {
 }
 
 async fn mpd_loop(mpd: Mpd, events: &MpdEvents) -> Result<()> {
-    let mut ver = playlist_version(&mpd).await?;
+    let mut queue_ver = playlist_version(&mpd).await?;
 
     loop {
         let changed = mpd.idle().await?;
+        log::debug!("mpd event: {:?}", changed);
 
         for event in changed.events() {
             match event {
                 MpdEvent::Player => events.status.send_replace(()),
                 MpdEvent::Playlist => {
-                    log::info!("mpd playlist event!");
                     let new_ver = playlist_version(&mpd).await?;
-                    if ver != new_ver {
-                        log::info!("playlist version changed: from {ver} => to {new_ver}");
-                        ver = new_ver;
+                    if queue_ver != new_ver {
+                        queue_ver = new_ver;
+                        events.queue.send_replace(());
                     }
                 }
+                MpdEvent::Options => events.options.send_replace(()),
+                MpdEvent::Mixer => {}
             }
         }
     }

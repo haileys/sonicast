@@ -1,10 +1,11 @@
 use std::collections::HashMap;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use futures::stream::{FuturesOrdered, TryStreamExt};
 use tokio::sync::OnceCell;
 use url::Url;
 
+use crate::mpd::types::PlaylistItem;
 use crate::mpd::Mpd;
 use crate::subsonic::Subsonic;
 use crate::subsonic::types::{RadioId, RadioStation};
@@ -48,21 +49,31 @@ impl<'a> Resolver<'a> {
         }
     }
 
-    pub async fn load_tracks_for(&self, urls: &[Url]) -> Result<Vec<AirsonicTrack>> {
-        let futs = urls.iter()
-            .map(|url| self.load_track_for_url(url));
+    pub async fn load_tracks_for(&self, items: &[PlaylistItem]) -> Result<Vec<AirsonicTrack>> {
+        let futs = items.iter()
+            .map(|item| self.load_track_for_url(item));
 
         gather(futs).await
     }
 
-    pub async fn load_track_for_url(&self, url: &Url) -> Result<AirsonicTrack> {
+    pub async fn load_track_for_url(&self, item: &PlaylistItem) -> Result<AirsonicTrack> {
+        let url = Url::parse(&item.file).with_context(|| {
+            format!("parsing playlist item url: {}", item.file)
+        })?;
+
         if let Some(id) = self.subsonic.track_id_from_stream_url(&url) {
             let track = self.subsonic.get_track(&id).await?;
             return Ok(track.into());
         }
 
-        if let Some(station) = self.resolve_radio_url(url).await? {
-            return Ok(station.into());
+        if let Some(station) = self.resolve_radio_url(&url).await? {
+            let mut track: AirsonicTrack = station.into();
+
+            // if the radio station sets a current track in the title,
+            // pass it back to airsonic in the album field:
+            track.details.album = item.title.clone();
+
+            return Ok(track);
         }
 
         anyhow::bail!("could not resolve url: {url}")

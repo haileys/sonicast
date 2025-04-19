@@ -1,6 +1,5 @@
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
-use url::Url;
 
 use crate::app::{Session, Command, helper};
 use crate::mpd::{self, Mpd};
@@ -169,14 +168,8 @@ pub async fn queue(session: &Session) -> Result<Queue> {
     let status = mpd.status().await?;
     drop(mpd);
 
-    let urls = queue.items.iter()
-        // TODO - how to handle unknown items? for now we just remove them
-        // need to improve...
-        .filter_map(|item| Url::parse(&item.file).ok())
-        .collect::<Vec<_>>();
-
     let resolver = session.resolver();
-    let tracks = resolver.load_tracks_for(&urls).await?;
+    let tracks = resolver.load_tracks_for(&queue.items).await?;
 
     let current_track = queue.items.iter()
         .position(|item| Some(&item.id) == status.song_id.as_ref());
@@ -278,8 +271,10 @@ pub struct SetVolume {
     volume: f64
 }
 
-async fn set_volume(_session: &Session, params: SetVolume) -> Result<()> {
-    todo!("set-volume: {params:?}")
+async fn set_volume(session: &Session, params: SetVolume) -> Result<()> {
+    // convert from 0-1 airsonic volume to 0-100 mpd volume:
+    let volume = (params.volume * 100.0).round() as usize;
+    session.mpd().await.setvol(volume).await
 }
 
 #[derive(Deserialize, Debug)]
@@ -288,8 +283,8 @@ pub struct SetPlaybackRate {
     rate: f64
 }
 
-async fn set_playback_rate(_session: &Session, params: SetPlaybackRate) -> Result<()> {
-    todo!("set-playback-rate: {params:?}")
+async fn set_playback_rate(_session: &Session, _params: SetPlaybackRate) -> Result<()> {
+    anyhow::bail!("set-playback-rate not currently implemented on mpd");
 }
 
 enum Op {

@@ -27,8 +27,8 @@ impl From<RadioStation> for AirsonicTrack {
             id: station.id.into(),
             details: TrackDetails {
                 title: Some(station.name.clone()),
-                album: Some(station.name.clone()),
                 stream_url: Some(station.stream_url),
+                album: None,
                 track: None,
                 album_id: None,
                 duration: Some(0.0),

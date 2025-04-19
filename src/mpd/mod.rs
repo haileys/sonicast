@@ -2,6 +2,7 @@ pub mod protocol;
 pub mod types;
 
 use std::borrow::Cow;
+use std::cmp;
 use std::collections::VecDeque;
 use std::ops::Range;
 use std::path::PathBuf;
@@ -95,7 +96,13 @@ impl Mpd {
     }
 
     pub async fn idle(&self) -> Result<Changed> {
-        let resp = self.conn.command("idle", &[]).await?;
+        const SUBSYSTEMS: &[&str] = &[
+            "player",
+            "playlist",
+            "options",
+            "mixer",
+        ];
+        let resp = self.conn.command("idle", SUBSYSTEMS).await?;
         Ok(Changed::from_attributes(&resp.attributes)?)
     }
 
@@ -165,6 +172,13 @@ impl Mpd {
 
     pub async fn shuffle(&self) -> Result<()> {
         self.conn.command("shuffle", &[]).await?;
+        Ok(())
+    }
+
+    pub async fn setvol(&self, volume: usize) -> Result<()> {
+        let volume = cmp::min(100, volume);
+        let volume = volume.to_string();
+        self.conn.command("setvol", &[&volume]).await?;
         Ok(())
     }
 
