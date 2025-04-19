@@ -21,9 +21,10 @@ use tokio::sync::{RwLock, RwLockWriteGuard, Mutex as AsyncMutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower::ServiceBuilder;
 
-mod helper;
-mod events;
 mod commands;
+mod events;
+mod helper;
+mod types;
 
 pub struct Config {
     pub listen: String,
@@ -167,6 +168,10 @@ pub struct Session {
 impl Session {
     pub async fn mpd(&self) -> RwLockWriteGuard<'_, Mpd> {
         self.ctx.mpd.write().await
+    }
+
+    pub fn resolver(&self) -> helper::Resolver {
+        helper::Resolver::new(&self.subsonic)
     }
 }
 

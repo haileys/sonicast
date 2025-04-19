@@ -1,11 +1,12 @@
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
+use url::Url;
 
 use crate::app::{Session, Command, helper};
 use crate::mpd::{self, Mpd};
 use crate::mpd::types::PlayerState;
-use crate::subsonic::{Track, TrackId};
 
+use super::types::{AirsonicTrack, AirsonicTrackId};
 use super::{Response, ServerMsg};
 
 macro_rules! commands {
@@ -129,25 +130,27 @@ async fn clear_queue(session: &Session) -> Result<()> {
 
 #[derive(Deserialize, Debug)]
 pub struct AddToQueue {
-    tracks: Vec<TrackId>,
+    tracks: Vec<AirsonicTrackId>,
 }
 
 async fn add_to_queue(session: &Session, params: AddToQueue) -> Result<()> {
-    let track_paths = helper::track_urls(&session.subsonic, &params.tracks)?;
+    let resolver = session.resolver();
+    let track_urls = resolver.stream_urls_for(&params.tracks).await?;
 
     let mpd = session.mpd().await;
-    for path in &track_paths {
-        mpd.addid(path).await?;
+    for url in &track_urls {
+        mpd.addid(url.as_str()).await?;
     }
 
     Ok(())
 }
 
 async fn set_next_in_queue(session: &Session, params: AddToQueue) -> Result<()> {
-    let track_paths = helper::track_urls(&session.subsonic, &params.tracks)?;
+    let resolver = session.resolver();
+    let track_urls = resolver.stream_urls_for(&params.tracks).await?;
 
     let mut mpd = session.mpd().await;
-    helper::atomic_enqueue_tracks(&mut mpd, &track_paths, Some(0)).await?;
+    helper::atomic_enqueue_tracks(&mut mpd, &track_urls, Some(0)).await?;
 
     Ok(())
 }
@@ -155,7 +158,7 @@ async fn set_next_in_queue(session: &Session, params: AddToQueue) -> Result<()> 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Queue {
-    tracks: Vec<Track>,
+    tracks: Vec<AirsonicTrack>,
     current_track: Option<usize>,
     current_track_position: Option<f64>,
 }
@@ -167,10 +170,13 @@ pub async fn queue(session: &Session) -> Result<Queue> {
     drop(mpd);
 
     let urls = queue.items.iter()
-        .map(|item| item.file.as_str())
+        // TODO - how to handle unknown items? for now we just remove them
+        // need to improve...
+        .filter_map(|item| Url::parse(&item.file).ok())
         .collect::<Vec<_>>();
 
-    let tracks = helper::load_tracks_for_urls(&session.subsonic, &urls).await?;
+    let resolver = session.resolver();
+    let tracks = resolver.load_tracks_for(&urls).await?;
 
     let current_track = queue.items.iter()
         .position(|item| Some(&item.id) == status.song_id.as_ref());
@@ -186,13 +192,14 @@ pub async fn queue(session: &Session) -> Result<Queue> {
 
 #[derive(Deserialize, Debug)]
 pub struct PlayTrackList {
-    tracks: Vec<TrackId>,
+    tracks: Vec<AirsonicTrackId>,
     index: Option<usize>,
     shuffle: Option<bool>,
 }
 
 async fn play_track_list(session: &Session, params: PlayTrackList) -> Result<()> {
-    let track_urls = helper::track_urls(&session.subsonic, &params.tracks)?;
+    let resolver = session.resolver();
+    let track_urls = resolver.stream_urls_for(&params.tracks).await?;
 
     let mpd = session.mpd().await;
 
@@ -206,7 +213,7 @@ async fn play_track_list(session: &Session, params: PlayTrackList) -> Result<()>
 
     // add all tracks in the same order as they were provided
     for url in &track_urls {
-        mpd.addid(url).await?;
+        mpd.addid(url.as_str()).await?;
     }
 
     // then play, from index if given

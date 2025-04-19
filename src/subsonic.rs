@@ -1,8 +1,13 @@
 use std::sync::Arc;
 
+use derive_more::Display;
 use reqwest::{Method, Url};
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
+
+pub mod types;
+use types::{Track, TrackId, RadioStation};
 
 #[derive(Clone)]
 pub struct SubsonicBase {
@@ -59,6 +64,29 @@ pub struct Subsonic {
     auth: Arc<AuthParams>,
 }
 
+#[derive(Deserialize, Debug, Error)]
+#[error("subsonic error {code}: {message}")]
+pub struct SubsonicError {
+    code: SubsonicErrorCode,
+    message: String,
+}
+
+#[derive(Debug, Deserialize, Serialize, Display)]
+#[serde(from = "usize")]
+pub enum SubsonicErrorCode {
+    NotFound,
+    Other(usize),
+}
+
+impl From<usize> for SubsonicErrorCode {
+    fn from(code: usize) -> Self {
+        match code {
+            70 => SubsonicErrorCode::NotFound,
+            _ => SubsonicErrorCode::Other(code),
+        }
+    }
+}
+
 impl Subsonic {
     #[allow(unused)]
     pub async fn ping(&self) -> Result<()> {
@@ -72,6 +100,12 @@ impl Subsonic {
         struct RandomSongs {
             #[serde(rename = "randomSongs")]
             random_songs: Tracks,
+        }
+
+        #[derive(Deserialize, Debug)]
+        struct Tracks {
+            #[serde(rename = "song")]
+            tracks: Vec<Track>,
         }
 
         Ok(self.call::<RandomSongs>("getRandomSongs", &[])
@@ -89,6 +123,25 @@ impl Subsonic {
         Ok(self.call::<GetSong>("getSong", &[("id", &id.0)])
             .await?
             .song)
+    }
+
+    pub async fn get_radio_stations(&self) -> Result<Vec<RadioStation>> {
+        #[derive(Deserialize, Debug)]
+        struct Stations {
+            #[serde(rename = "internetRadioStations")]
+            stations: Station,
+        }
+
+        #[derive(Deserialize, Debug)]
+        struct Station {
+            #[serde(rename = "internetRadioStation")]
+            station: Vec<RadioStation>,
+        }
+
+        Ok(self.call::<Stations>("getInternetRadioStations", &[])
+            .await?
+            .stations
+            .station)
     }
 
     pub fn stream_url(&self, id: &TrackId) -> Result<Url> {
@@ -121,11 +174,6 @@ impl Subsonic {
             Err { error: SubsonicError }
         }
 
-        #[derive(Deserialize, Debug)]
-        struct SubsonicError {
-            message: String,
-        }
-
         let request = self.request(Method::GET, &format!("rest/{method}"))
             .query(params)
             .build()?;
@@ -146,9 +194,7 @@ impl Subsonic {
 
         match root.response {
             SubsonicResponse::Ok(data) => Ok(data),
-            SubsonicResponse::Err { error } => {
-                anyhow::bail!("subsonic error: {}", error.message);
-            }
+            SubsonicResponse::Err { error } => Err(error.into()),
         }
     }
 
@@ -164,65 +210,3 @@ impl Subsonic {
             ])
     }
 }
-
-#[derive(Deserialize, Debug)]
-struct Tracks {
-    #[serde(rename = "song")]
-    tracks: Vec<Track>,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct Track {
-    pub id: TrackId,
-    pub artist: Option<String>,
-    pub title: Option<String>,
-    pub duration: Option<f64>,
-    pub starred: Option<bool>,
-    #[serde(rename = "coverArt")]
-    pub cover_art: Option<CoverArtId>,
-    pub track: Option<usize>,
-    pub album: Option<String>,
-    #[serde(rename = "albumId")]
-    pub album_id: Option<AlbumId>,
-    pub artists: Vec<TrackArtist>,
-    #[serde(rename = "isStream")]
-    pub is_stream: Option<bool>,
-    #[serde(rename = "isPodcast")]
-    pub is_podcast: Option<bool>,
-    #[serde(rename = "isUnavailable")]
-    pub is_unavailable: Option<bool>,
-    #[serde(rename = "playCount")]
-    pub play_count: Option<usize>,
-    #[serde(rename = "replayGain")]
-    pub replay_gain: Option<serde_json::Value>,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct TrackArtist {
-    pub name: String,
-    pub id: ArtistId,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct ReplayGain {
-    #[serde(rename = "trackGain")]
-    pub track_gain: Option<f64>,
-    #[serde(rename = "trackPeak")]
-    pub track_peak: Option<f64>,
-    #[serde(rename = "albumGain")]
-    pub album_gain: Option<f64>,
-    #[serde(rename = "albumPeak")]
-    pub album_peak: Option<f64>,
-}
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct TrackId(pub String);
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct AlbumId(pub String);
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct ArtistId(pub String);
-
-#[derive(Deserialize, Serialize, Debug)]
-pub struct CoverArtId(pub String);
