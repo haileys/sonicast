@@ -15,14 +15,8 @@ mod util;
 async fn main() -> Result<()> {
     init_log();
 
-    let config = app::Config {
-        subsonic: subsonic(),
-        mpd: mpd(),
-    };
-
-    app::run(&config).await?;
-
-    Ok(())
+    let config = config();
+    app::run(&config).await
 }
 
 fn init_log() {
@@ -38,6 +32,14 @@ fn default_log_level() -> log::LevelFilter {
         log::LevelFilter::Debug
     } else {
         log::LevelFilter::Info
+    }
+}
+
+fn config() -> app::Config {
+    app::Config {
+        listen: env("SONICAST_LISTEN"),
+        subsonic: subsonic(),
+        mpd: mpd(),
     }
 }
 

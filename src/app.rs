@@ -25,6 +25,7 @@ mod events;
 mod commands;
 
 pub struct Config {
+    pub listen: String,
     pub subsonic: subsonic::Config,
     pub mpd: mpd::Config,
 }
@@ -78,7 +79,7 @@ pub async fn run(config: &Config) -> Result<()> {
         .layer(ServiceBuilder::new().layer(cors))
         .with_state(ctx);
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await?;
+    let listener = tokio::net::TcpListener::bind(&config.listen).await?;
     axum::serve(listener, app).await?;
     Ok(())
 }
