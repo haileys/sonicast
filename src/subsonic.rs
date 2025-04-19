@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use reqwest::{Method, Url};
-use anyhow::Result;
+use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone)]
@@ -68,28 +68,27 @@ impl Subsonic {
 
     #[allow(unused)]
     pub async fn get_random_songs(&self) -> Result<Vec<Track>> {
-        let response: SubsonicResponse<RandomSongs>
-            = self.call("getRandomSongs", &[]).await?;
-
         #[derive(Deserialize, Debug)]
         struct RandomSongs {
             #[serde(rename = "randomSongs")]
             random_songs: Tracks,
         }
 
-        Ok(response.data.random_songs.tracks)
+        Ok(self.call::<RandomSongs>("getRandomSongs", &[])
+            .await?
+            .random_songs
+            .tracks)
     }
 
     pub async fn get_track(&self, id: &TrackId) -> Result<Track> {
-        let response: SubsonicResponse<GetSong>
-            = self.call("getSong", &[("id", &id.0)]).await?;
-
         #[derive(Deserialize, Debug)]
         struct GetSong {
             song: Track,
         }
 
-        Ok(response.data.song)
+        Ok(self.call::<GetSong>("getSong", &[("id", &id.0)])
+            .await?
+            .song)
     }
 
     pub fn stream_url(&self, id: &TrackId) -> Result<Url> {
@@ -109,6 +108,24 @@ impl Subsonic {
     async fn call<T>(&self, method: &str, params: &[(&str, &str)]) -> Result<T>
         where T: serde::de::DeserializeOwned
     {
+        #[derive(Deserialize, Debug)]
+        struct RootResponse<T> {
+            #[serde(rename = "subsonic-response")]
+            response: SubsonicResponse<T>
+        }
+
+        #[derive(Deserialize, Debug)]
+        #[serde(untagged)]
+        enum SubsonicResponse<T> {
+            Ok(T),
+            Err { error: SubsonicError }
+        }
+
+        #[derive(Deserialize, Debug)]
+        struct SubsonicError {
+            message: String,
+        }
+
         let request = self.request(Method::GET, &format!("rest/{method}"))
             .query(params)
             .build()?;
@@ -116,7 +133,23 @@ impl Subsonic {
         let response = self.inner.client.execute(request).await?;
         response.error_for_status_ref()?;
 
-        Ok(response.json().await?)
+        let text = response.text().await?;
+
+        let root = serde_json::from_str::<RootResponse<T>>(&text)
+            .map_err(anyhow::Error::from)
+            .with_context(|| {
+                match serde_json::from_str::<serde_json::Value>(&text) {
+                    Ok(json) => format!("original json: {json:#?}"),
+                    Err(_) => format!("original text: {text:?}"),
+                }
+            })?;
+
+        match root.response {
+            SubsonicResponse::Ok(data) => Ok(data),
+            SubsonicResponse::Err { error } => {
+                anyhow::bail!("subsonic error: {}", error.message);
+            }
+        }
     }
 
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
@@ -130,12 +163,6 @@ impl Subsonic {
                 ("v", env!("CARGO_PKG_VERSION")),
             ])
     }
-}
-
-#[derive(Deserialize, Debug)]
-struct SubsonicResponse<T> {
-    #[serde(rename = "subsonic-response")]
-    data: T,
 }
 
 #[derive(Deserialize, Debug)]

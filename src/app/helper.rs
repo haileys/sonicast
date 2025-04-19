@@ -27,7 +27,7 @@ pub async fn load_tracks_for_urls(subsonic: &Subsonic, urls: &[&str]) -> Result<
     gather(urls.iter()
         .map(async |url| {
             load_track_for_url(subsonic, url).await
-                .with_context(|| "loading track for url: {url}")
+                .with_context(|| format!("loading track for url: {url}"))
         })).await
 }
 

@@ -47,7 +47,7 @@ pub async fn dispatch(session: &Session, command: Command) {
     let kind = match dispatch_kind(session, command.kind).await {
         Ok(kind) => kind,
         Err(err) => {
-            log::error!("dispatching command: {err}");
+            log::error!("{err:?}");
             ResponseKind::Error { message: format!("{err}") }
         }
     };
