@@ -4,8 +4,6 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-// use ffmpeg_next::format;
-
 mod app;
 mod mpd;
 mod subsonic;

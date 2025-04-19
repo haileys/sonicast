@@ -217,52 +217,6 @@ pub async fn play_track_list(ctx: State<Ctx>, params: Json<PlayTrackListParams>)
     Ok(())
 }
 
-#[derive(Deserialize)]
-pub struct PlayPosParams {
-    index: usize,
-}
-
-pub async fn post_play_index(ctx: State<Ctx>, params: Json<PlayPosParams>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.playpos(params.index).await?;
-    Ok(())
-}
-
-pub async fn post_play(ctx: State<Ctx>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.play().await?;
-    Ok(())
-}
-
-pub async fn post_pause(ctx: State<Ctx>) -> AppResult<()> {
-    let mpd = ctx.mpd.write().await;
-    mpd.pause().await?;
-    Ok(())
-}
-
-pub async fn post_next(ctx: State<Ctx>) -> AppResult<()> {
-    let mut mpd = ctx.mpd.write().await;
-    player_op(&mut mpd, Op::Next).await?;
-    Ok(())
-}
-
-pub async fn post_previous(ctx: State<Ctx>) -> AppResult<()> {
-    let mut mpd = ctx.mpd.write().await;
-    player_op(&mut mpd, Op::Previous).await?;
-    Ok(())
-}
-
-#[derive(Deserialize)]
-pub struct SeekParams {
-    pos: f64
-}
-
-pub async fn post_seek(ctx: State<Ctx>, params: Json<SeekParams>) -> AppResult<()> {
-    let mut mpd = ctx.mpd.write().await;
-    player_op(&mut mpd, Op::Seek(params.pos)).await?;
-    Ok(())
-}
-
 pub async fn reset_queue(ctx: State<Ctx>) -> AppResult<()> {
     let mpd = ctx.mpd.write().await;
     mpd.stop().await?;
