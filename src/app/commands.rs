@@ -12,13 +12,13 @@ use super::{Response, ServerMsg};
 macro_rules! commands {
     { $( $variant:ident : $func:ident ( $( $param:ty )? ) => $result:ty ; )* } => {
         #[derive(Debug, Deserialize)]
-        #[serde(rename_all = "kebab-case", tag = "command", content = "arg")]
+        #[serde(rename_all = "kebab-case", tag = "name", content = "param")]
         pub enum CommandKind {
             $( $variant $( ( $param ) )?, )*
         }
 
         #[derive(Debug, Serialize)]
-        #[serde(rename_all = "kebab-case", tag = "response", content = "data")]
+        #[serde(rename_all = "kebab-case", tag = "kind", content = "data")]
         pub enum ResponseKind {
             Error { message: String },
             $( $variant ( $result ), )*

@@ -160,6 +160,7 @@ fn message_stream(rx: SplitStream<WebSocket>) -> impl Stream<Item = ClientMsg> {
             };
 
             let ws::Message::Text(text) = msg else { continue };
+            log::debug!("rx msg: {text}");
 
             let msg = match serde_json::from_str(&text) {
                 Ok(msg) => msg,
