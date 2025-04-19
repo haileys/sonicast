@@ -46,7 +46,6 @@ fn subsonic() -> subsonic::Config {
         base_url: env("SUBSONIC_URL"),
         username: env("SUBSONIC_USERNAME"),
         password: env("SUBSONIC_PASSWORD"),
-        music_dir: env("MUSIC_DIR"),
     }
 }
 

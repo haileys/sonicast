@@ -19,10 +19,6 @@ pub struct Config {
     pub base_url: reqwest::Url,
     pub username: String,
     pub password: String,
-    // this is not a PathBuf because we need to enforce utf-8 encoding on
-    // file paths in this app. so String is the appropriate type
-    #[allow(unused)]
-    pub music_dir: String,
 }
 
 impl Subsonic {
