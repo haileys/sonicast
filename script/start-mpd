@@ -14,7 +14,7 @@ bind_to_address "$MPD_DIR/mpd.sock"
 db_file "$MPD_DIR/mpd.db"
 state_file "$MPD_DIR/mpdstate"
 playlist_directory "$MPD_DIR/playlists"
-music_directory "$MUSIC_DIR"
+music_directory "$HOME/Music"
 CONF
 
 # run mpd
