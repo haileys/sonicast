@@ -5,32 +5,17 @@ use std::str::FromStr;
 use anyhow::Result;
 
 mod app;
+mod log;
 mod mpd;
 mod subsonic;
 mod util;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    init_log();
+    log::init();
 
     let config = config();
     app::run(&config).await
-}
-
-fn init_log() {
-    env_logger::builder()
-        .format_timestamp_millis()
-        .filter_level(default_log_level())
-        .parse_default_env()
-        .init();
-}
-
-fn default_log_level() -> log::LevelFilter {
-    if cfg!(debug_assertions) {
-        log::LevelFilter::Debug
-    } else {
-        log::LevelFilter::Info
-    }
 }
 
 fn config() -> app::Config {
