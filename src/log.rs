@@ -17,6 +17,11 @@ pub fn init() {
         .init();
 }
 
+pub fn error(err: &anyhow::Error) {
+    log::error!("{err:?}");
+    log::error!("{}", err.backtrace());
+}
+
 fn default_log_level() -> log::LevelFilter {
     if cfg!(debug_assertions) {
         log::LevelFilter::Debug

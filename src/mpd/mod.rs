@@ -307,13 +307,8 @@ fn is_idle(cmd: &str) -> bool {
 
 async fn conn_reader(mut reader: MpdReader, shared: Arc<ConnShared>) {
     loop {
-        let response = match reader.read_response().await {
-            Ok(response) => response,
-            Err(error) => {
-                log::error!("connection reader: {error:?}");
-                return;
-            }
-        };
+        let response = reader.read_response().await
+            .expect("lost mpd connection");
 
         let mut queue = shared.queue.lock().await;
         let Some(front) = queue.pop_front() else { unreachable!() };

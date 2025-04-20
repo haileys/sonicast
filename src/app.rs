@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::log::error;
 use crate::mpd::{self, Mpd};
 use crate::subsonic::{self, AuthParams, Subsonic, SubsonicBase};
 use crate::util::broken_pipe;
@@ -110,7 +111,7 @@ async fn run_websocket(ctx: Ctx, socket: WebSocket, subsonic: Subsonic) {
     let result = fut.await.factor_first().0;
 
     if let Err(err) = result {
-        log::error!("error running websocket: {err}");
+        error(&err);
     }
 }
 
