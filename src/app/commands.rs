@@ -59,6 +59,7 @@ pub async fn dispatch(session: &Session, command: Command) {
 commands! {
     Play: play() => ();
     Pause: pause() => ();
+    Stop: stop() => ();
     SkipNext: skip_next() => ();
     SkipPrevious: skip_previous() => ();
     Seek: seek(Seek) => ();
@@ -88,6 +89,11 @@ async fn play(session: &Session) -> Result<()> {
 async fn pause(session: &Session) -> Result<()> {
     let mpd = session.mpd().await;
     mpd.pause().await
+}
+
+async fn stop(session: &Session) -> Result<()> {
+    let mpd = session.mpd().await;
+    mpd.stop().await
 }
 
 async fn skip_next(session: &Session) -> Result<()> {
