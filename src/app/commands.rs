@@ -2,8 +2,8 @@ use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 
 use crate::app::{Session, Command, helper};
+use crate::mpd::types::{PlaybackState, Seconds};
 use crate::mpd::{self, Mpd};
-use crate::mpd::types::PlayerState;
 
 use super::types::{AirsonicTrack, AirsonicTrackId};
 use super::{Response, ServerMsg};
@@ -69,6 +69,8 @@ commands! {
     SetNextInQueue: set_next_in_queue(AddToQueue) => ();
     Queue: queue() => Queue;
     PlayTrackList: play_track_list(PlayTrackList) => ();
+    LoadPlayerState: load_player_state(PlayerState) => ();
+    UnloadPlayerState: unload_player_state() => PlayerState;
     RemoveFromQueue: remove_from_queue(RemoveFromQueue) => ();
     ShuffleQueue: shuffle_queue() => ();
     ReplayGainMode: replay_gain_mode(ReplayGainMode) => ();
@@ -180,6 +182,66 @@ pub async fn queue(session: &Session) -> Result<Queue> {
         tracks,
         current_track,
         current_track_position,
+    })
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct PlayerState {
+    tracks: Vec<AirsonicTrack>,
+    index: usize,
+    time: f64,
+    shuffle: bool,
+    repeat: bool,
+    playing: bool,
+}
+
+// loads entire player state, used for switching to this player from another
+async fn load_player_state(session: &Session, params: PlayerState) -> Result<()> {
+    let resolver = session.resolver();
+
+    let track_ids = params.tracks.iter()
+        .map(|t| t.id.clone())
+        .collect::<Vec<_>>();
+
+    let track_urls = resolver.stream_urls_for(&track_ids).await?;
+
+    let mpd = session.mpd().await;
+    mpd.clear().await?;
+
+    for url in &track_urls {
+        mpd.addid(url.as_str()).await?;
+    }
+
+    mpd.seek(params.index, params.time).await?;
+    mpd.random(params.shuffle).await?;
+    mpd.repeat(params.repeat).await?;
+
+    if params.playing {
+        mpd.play().await?;
+    }
+
+    Ok(())
+}
+
+// dumps player state, stops, clears queue; used for switching away from this player
+async fn unload_player_state(session: &Session) -> Result<PlayerState> {
+    let mpd = session.mpd().await;
+    let status = mpd.status().await?;
+    let queue = mpd.playlistinfo().await?;
+    mpd.stop().await?;
+    mpd.clear().await?;
+    drop(mpd);
+
+    let resolver = session.resolver();
+    let tracks = resolver.load_tracks_for(&queue.items).await?;
+
+    Ok(PlayerState {
+        tracks,
+        index: status.song.unwrap_or_default(),
+        time: status.elapsed.map(|Seconds(s)| s).unwrap_or_default(),
+        shuffle: status.random,
+        repeat: status.repeat,
+        playing: status.state == PlaybackState::Play,
     })
 }
 
@@ -305,7 +367,7 @@ async fn player_op(mpd: &mut Mpd, op: Op) -> anyhow::Result<()> {
         Op::Seek(pos) => { mpd.seekcur(pos).await? }
     }
 
-    if state == PlayerState::Play {
+    if state == PlaybackState::Play {
         mpd.play().await?;
     }
 

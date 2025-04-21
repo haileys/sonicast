@@ -7,7 +7,7 @@ use serde::Serialize;
 use tokio::sync::watch;
 
 use crate::mpd::Mpd;
-use crate::mpd::types::{MpdEvent, PlayerState, Status};
+use crate::mpd::types::{MpdEvent, PlaybackState, Status};
 use crate::app::ServerMsg;
 
 use super::{commands, Session};
@@ -67,7 +67,7 @@ async fn playback_event_task(session: &Session) -> Result<()> {
         };
 
         let event = PlaybackEvent {
-            playing: status.state == PlayerState::Play,
+            playing: status.state == PlaybackState::Play,
             position: status.elapsed.map(|s| s.0),
             duration: status.duration.map(|s| s.0),
         };

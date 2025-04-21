@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::subsonic::types::{RadioId, RadioStation, TrackId, Track, TrackDetails};
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct AirsonicTrack {
     pub id: AirsonicTrackId,
     #[serde(flatten)]

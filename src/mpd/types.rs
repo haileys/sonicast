@@ -92,7 +92,7 @@ impl FromStr for MpdEvent {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub enum PlayerState {
+pub enum PlaybackState {
     Stop,
     Pause,
     Play,
@@ -103,7 +103,8 @@ pub struct Seconds(pub f64);
 
 #[derive(Debug)]
 pub struct Status {
-    pub state: PlayerState,
+    pub state: PlaybackState,
+    pub song: Option<usize>,
     pub song_id: Option<Id>,
     pub elapsed: Option<Seconds>,
     pub duration: Option<Seconds>,
@@ -118,15 +119,16 @@ pub struct Status {
 impl Status {
     pub fn from_attributes(attrs: &Attributes) -> Result<Self> {
         let state = match attrs.get_one("state") {
-            Some("play") => PlayerState::Play,
-            Some("pause") => PlayerState::Pause,
-            Some("stop") => PlayerState::Stop,
+            Some("play") => PlaybackState::Play,
+            Some("pause") => PlaybackState::Pause,
+            Some("stop") => PlaybackState::Stop,
             Some(state) => bail!("unknown player state: {state}"),
             None => bail!("missing player state"),
         };
 
         Ok(Status {
             state,
+            song: attrs.get_opt("song")?,
             song_id: attrs.get_opt("songid")?,
             elapsed: attrs.get_opt("elapsed")?,
             duration: attrs.get_opt("duration")?,

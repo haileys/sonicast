@@ -143,6 +143,13 @@ impl Mpd {
         Ok(())
     }
 
+    pub async fn seek(&self, index: usize, time: f64) -> Result<()> {
+        let index = format!("{index}");
+        let time = format!("{time}");
+        self.conn.command("seek", &[&index, &time]).await?;
+        Ok(())
+    }
+
     pub async fn seekcur(&self, pos: f64) -> Result<()> {
         let pos = format!("{pos}");
         self.conn.command("seekcur", &[&pos]).await?;
