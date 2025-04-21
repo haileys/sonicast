@@ -1,3 +1,4 @@
+export SONICAST_LISTEN=
 export SUBSONIC_URL=
 export MPD_SOCKET=
 
