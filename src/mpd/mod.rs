@@ -161,6 +161,12 @@ impl Mpd {
         Ok(Status::from_attributes(&resp.attributes)?)
     }
 
+    pub async fn replay_gain_status(&self) -> Result<ReplayGainMode> {
+        let resp = self.conn.command("replay_gain_status", &[]).await?;
+        let mode = resp.attributes.get_opt("replay_gain_mode")?;
+        Ok(mode.unwrap_or(ReplayGainMode::None))
+    }
+
     #[allow(unused)]
     pub async fn playlistid(&self, id: &Id) -> Result<PlaylistItem> {
         let resp = self.conn.command("playlistid", &[id.as_str()]).await?;

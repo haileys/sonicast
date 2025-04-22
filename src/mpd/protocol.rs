@@ -137,10 +137,12 @@ impl Attributes {
         }
     }
 
-    pub fn get_opt<T: FromStr<Err = E>, E: Send + Sync + std::error::Error + 'static>(&self, name: &str) -> anyhow::Result<Option<T>> {
+    pub fn get_opt<T: FromStr<Err: Into<anyhow::Error>>>(&self, name: &str) -> anyhow::Result<Option<T>> {
         self.get_one(name)
-            .map(|value| value.parse().with_context(|| format!("malformed {name} attribute")))
+            .map(|value| value.parse())
             .transpose()
+            .map_err(Into::into)
+            .with_context(|| format!("malformed {name} attribute"))
     }
 
     pub fn get_one(&self, name: &str) -> Option<&'_ str> {

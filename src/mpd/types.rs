@@ -114,6 +114,7 @@ pub struct Status {
     pub repeat: bool,
     pub random: bool,
     pub single: bool,
+    pub volume: Option<usize>,
 }
 
 impl Status {
@@ -137,15 +138,29 @@ impl Status {
             repeat: attrs.get_bool("repeat")?,
             random: attrs.get_bool("random")?,
             single: attrs.get_bool("single")?,
+            volume: attrs.get_opt("volume")?,
         })
     }
 }
 
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Serialize, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 pub enum ReplayGainMode {
     None,
     Track,
     Album,
     Auto,
+}
+
+impl FromStr for ReplayGainMode {
+    type Err = anyhow::Error;
+    fn from_str(s: &str) -> Result<Self> {
+        match s {
+            "none" => Ok(ReplayGainMode::None),
+            "track" => Ok(ReplayGainMode::Track),
+            "album" => Ok(ReplayGainMode::Album),
+            "auto" => Ok(ReplayGainMode::Auto),
+            _ => anyhow::bail!("unknown replay_gain_mode: {s}")
+        }
+    }
 }

@@ -5,14 +5,14 @@ use std::str::FromStr;
 use anyhow::Result;
 
 mod app;
-mod log;
+mod logging;
 mod mpd;
 mod subsonic;
 mod util;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    log::init();
+    logging::init();
 
     let config = config();
     app::run(&config).await

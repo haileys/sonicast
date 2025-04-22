@@ -6,8 +6,9 @@ use futures::{future, pin_mut};
 use serde::Serialize;
 use tokio::sync::watch;
 
+use crate::logging;
 use crate::mpd::Mpd;
-use crate::mpd::types::{MpdEvent, PlaybackState, Status};
+use crate::mpd::types::{MpdEvent, PlaybackState, ReplayGainMode};
 use crate::app::ServerMsg;
 
 use super::{commands, Session};
@@ -30,9 +31,11 @@ pub struct PlaybackEvent {
 
 #[derive(Debug, Serialize)]
 pub struct OptionsEvent {
+    volume: f64,
     repeat: bool,
-    random: bool,
+    shuffle: bool,
     single: bool,
+    replay_gain: ReplayGainMode,
 }
 
 #[derive(Debug, Serialize)]
@@ -79,26 +82,33 @@ async fn playback_event_task(session: &Session) -> Result<()> {
 }
 
 async fn options_event_task(session: &Session) -> Result<()> {
-    let mut options = session.ctx.events.options.subscribe();
+    let mut watch = session.ctx.events.options.subscribe();
 
-    while options.changed().await.is_ok() {
-        let Some(status) = get_status(&session).await else { continue };
-        let options = OptionsEvent {
-            random: status.random,
-            repeat: status.repeat,
-            single: status.single,
-        };
+    loop {
+        let Some(options) = get_player_options(&session).await
+            .inspect_err(logging::error)
+            .ok() else { continue };
+
         session.tx.send(ServerMsg::Options(options)).await;
+
+        let Ok(_) = watch.changed().await else { break };
     }
 
     Ok(())
 }
 
-async fn get_status(session: &Session) -> Option<Status> {
+async fn get_player_options(session: &Session) -> Result<OptionsEvent> {
     let mpd = session.ctx.mpd.read().await;
-    mpd.status().await
-        .inspect_err(|err| { log::warn!("fetching mpd status: {err:?}") })
-        .ok()
+    let status = mpd.status().await?;
+    let replay_gain = mpd.replay_gain_status().await?;
+    let volume = status.volume.unwrap_or(100) as f64 / 100.0;
+    Ok(OptionsEvent {
+        volume,
+        shuffle: status.random,
+        repeat: status.repeat,
+        single: status.single,
+        replay_gain,
+    })
 }
 
 async fn status_event_task(session: &Session) -> Result<()> {
