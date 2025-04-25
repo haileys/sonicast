@@ -129,7 +129,7 @@ async fn queue_event_common(session: &Session, watch: watch::Sender<()>) -> Resu
                 session.tx.send(msg).await;
             }
             Err(err) => {
-                log::warn!("error fetching queue: {err}");
+                logging::error(&err.context("queue event, fetching queue"));
             }
         }
     }
