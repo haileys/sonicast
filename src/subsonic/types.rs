@@ -14,7 +14,7 @@ pub struct TrackDetails {
     pub title: Option<String>,
     pub duration: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub starred: Option<bool>,
+    pub starred: Option<String>,
     #[serde(rename = "coverArt", skip_serializing_if = "Option::is_none")]
     pub cover_art: Option<CoverArtId>,
     #[serde(skip_serializing_if = "Option::is_none")]
