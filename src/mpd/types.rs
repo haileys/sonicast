@@ -156,7 +156,7 @@ impl FromStr for ReplayGainMode {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self> {
         match s {
-            "none" => Ok(ReplayGainMode::None),
+            "off" => Ok(ReplayGainMode::None),
             "track" => Ok(ReplayGainMode::Track),
             "album" => Ok(ReplayGainMode::Album),
             "auto" => Ok(ReplayGainMode::Auto),
