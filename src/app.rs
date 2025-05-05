@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
-use crate::logging;
+use crate::podcasts::{Podcasts, PodcastsBase};
+use crate::{logging, podcasts};
 use crate::mpd::{self, Mpd};
-use crate::subsonic::{self, AuthParams, Subsonic, SubsonicBase};
+use crate::subsonic::{AuthParams, Subsonic, SubsonicBase};
 use crate::util::broken_pipe;
 
 use anyhow::Result;
@@ -21,6 +22,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{RwLock, RwLockWriteGuard, Mutex as AsyncMutex};
 use tower_http::cors::{Any, CorsLayer};
 use tower::ServiceBuilder;
+use url::Url;
 
 mod commands;
 mod events;
@@ -29,23 +31,25 @@ mod types;
 
 pub struct Config {
     pub listen: String,
-    pub subsonic: subsonic::Config,
+    pub subsonic_url: Url,
     pub mpd: mpd::Config,
+    pub podcasts: Option<podcasts::Config>,
 }
 
 pub async fn run(config: &Config) -> Result<()> {
     use axum::Router;
     use axum::routing::get;
 
-    // open clients, including two mpd connections
-    //  - one for commands, the other for events
-    let subsonic = SubsonicBase::new(&config.subsonic);
+    let subsonic = SubsonicBase::new(&config.subsonic_url);
+    let podcasts = config.podcasts.as_ref().map(|config| PodcastsBase::new(config));
+
     let mpd = Mpd::connect(&config.mpd).await?;
     let mpd_event = Mpd::connect(&config.mpd).await?;
 
     let mpd = Arc::new(RwLock::new(mpd));
     let ctx = Ctx::new(AppData {
         subsonic,
+        podcasts,
         mpd,
         events: events::MpdEvents::default(),
     });
@@ -72,6 +76,7 @@ pub type Ctx = Arc<AppData>;
 
 pub struct AppData {
     subsonic: SubsonicBase,
+    podcasts: Option<PodcastsBase>,
     mpd: Arc<RwLock<Mpd>>,
     events: events::MpdEvents,
 }
@@ -81,24 +86,38 @@ async fn websocket(
     ws: WebSocketUpgrade,
     auth: Form<AuthParams>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let subsonic = ctx.subsonic.authenticate(auth.0).await
+    let auth = Arc::new(auth.0);
+
+    let subsonic = ctx.subsonic.authenticate(auth.clone()).await
         .map_err(|err| {
             log::warn!("subsonic authenticate: {err:?}");
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
 
+    let podcasts = open_podcasts(ctx.podcasts.as_ref(), auth).await
+        .map_err(|err| {
+            log::warn!("podcasts authenticate: {err:?}");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
     Ok(ws.on_upgrade(move |socket| {
-        run_websocket(ctx.0, socket, subsonic)
+        run_websocket(ctx.0, socket, subsonic, podcasts)
     }))
 }
 
-async fn run_websocket(ctx: Ctx, socket: WebSocket, subsonic: Subsonic) {
+async fn open_podcasts(base: Option<&PodcastsBase>, params: Arc<AuthParams>) -> Result<Option<Podcasts>> {
+    let Some(base) = base else { return Ok(None) };
+    Ok(Some(base.authenticate(params).await?))
+}
+
+async fn run_websocket(ctx: Ctx, socket: WebSocket, subsonic: Subsonic, podcasts: Option<Podcasts>) {
     let (tx, rx) = socket.split();
 
     let session = Session {
         ctx,
         tx: Sender::new(tx),
         subsonic,
+        podcasts,
     };
 
     let receive_task = receive_task(&session, rx);
@@ -164,6 +183,7 @@ pub struct Session {
     ctx: Ctx,
     tx: Sender,
     subsonic: Subsonic,
+    podcasts: Option<Podcasts>,
 }
 
 impl Session {
@@ -172,7 +192,7 @@ impl Session {
     }
 
     pub fn resolver(&self) -> helper::Resolver {
-        helper::Resolver::new(&self.subsonic)
+        helper::Resolver::new(&self.subsonic, self.podcasts.as_ref())
     }
 }
 

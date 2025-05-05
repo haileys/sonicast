@@ -9,6 +9,7 @@ mod logging;
 mod mpd;
 mod subsonic;
 mod util;
+mod podcasts;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -21,15 +22,19 @@ async fn main() -> Result<()> {
 fn config() -> app::Config {
     app::Config {
         listen: env("SONICAST_LISTEN"),
-        subsonic: subsonic(),
+        subsonic_url: env("SUBSONIC_URL"),
         mpd: mpd(),
+        podcasts: podcasts(),
     }
 }
 
-fn subsonic() -> subsonic::Config {
-    subsonic::Config {
-        base_url: env("SUBSONIC_URL"),
-    }
+fn podcasts() -> Option<podcasts::Config> {
+    let server_url = opt_env("PODCASTS_URL")?;
+
+    Some(podcasts::Config {
+        server_url,
+        episode_prefix: env("PODCAST_EPISODE_PREFIX"),
+    })
 }
 
 fn mpd() -> mpd::Config {
@@ -39,14 +44,21 @@ fn mpd() -> mpd::Config {
 }
 
 fn env<T: FromStr<Err: Display>>(name: &str) -> T {
+    match opt_env(name) {
+        Some(value) => value,
+        None => { panic!("missing env var: {name}") }
+    }
+}
+
+fn opt_env<T: FromStr<Err: Display>>(name: &str) -> Option<T> {
     let value = match std::env::var(name) {
         Ok(value) => value,
-        Err(VarError::NotPresent) => panic!("missing env var: {name}"),
+        Err(VarError::NotPresent) => { return None }
         Err(VarError::NotUnicode(_)) => panic!("env var is invalid utf-8: {name}"),
     };
 
     match value.parse() {
-        Ok(value) => value,
+        Ok(value) => Some(value),
         Err(err) => panic!("invalid format for env var: {name}: {err}"),
     }
 }

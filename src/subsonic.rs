@@ -19,11 +19,6 @@ struct Inner {
     base_url: reqwest::Url,
 }
 
-#[derive(Clone)]
-pub struct Config {
-    pub base_url: reqwest::Url,
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AuthParams {
     #[serde(rename = "u")]
@@ -37,19 +32,19 @@ pub struct AuthParams {
 }
 
 impl SubsonicBase {
-    pub fn new(config: &Config) -> Self {
+    pub fn new(base_url: &Url) -> Self {
         SubsonicBase {
             inner: Arc::new(Inner {
                 client: reqwest::Client::new(),
-                base_url: config.base_url.clone(),
+                base_url: base_url.clone(),
             }),
         }
     }
 
-    pub async fn authenticate(&self, params: AuthParams) -> Result<Subsonic> {
+    pub async fn authenticate(&self, params: Arc<AuthParams>) -> Result<Subsonic> {
         let subsonic = Subsonic {
             inner: self.inner.clone(),
-            auth: Arc::new(params),
+            auth: params,
         };
 
         // test auth details:
@@ -114,6 +109,10 @@ impl Subsonic {
             .tracks)
     }
 
+    pub fn base_url(&self) -> &Url {
+        &self.inner.base_url
+    }
+
     pub async fn get_track(&self, id: &TrackId) -> Result<Track> {
         #[derive(Deserialize, Debug)]
         struct GetSong {
@@ -153,12 +152,18 @@ impl Subsonic {
     }
 
     pub fn track_id_from_stream_url(&self, url: &Url) -> Option<TrackId> {
+        let base = self.base_url();
+
+        if base.host() != url.host() {
+            return None;
+        }
+
         url.query_pairs()
             .find(|(name, _)| name == "id")
             .map(|(_, value)| TrackId(value.to_string()))
     }
 
-    async fn call<T>(&self, method: &str, params: &[(&str, &str)]) -> Result<T>
+    pub async fn call<T>(&self, method: &str, params: &[(&str, &str)]) -> Result<T>
         where T: serde::de::DeserializeOwned
     {
         #[derive(Deserialize, Debug)]

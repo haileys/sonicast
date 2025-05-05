@@ -1,7 +1,7 @@
 use derive_more::From;
 use serde::{Deserialize, Serialize};
 
-use crate::subsonic::types::{RadioId, RadioStation, TrackId, Track, TrackDetails};
+use crate::{podcasts::PodcastEpisode, subsonic::types::{RadioId, RadioStation, Track, TrackDetails, TrackId}};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AirsonicTrack {
@@ -41,6 +41,31 @@ impl From<RadioStation> for AirsonicTrack {
                 is_unavailable: None,
                 play_count: None,
                 replay_gain: None,
+            }
+        }
+    }
+}
+
+impl From<PodcastEpisode> for AirsonicTrack {
+    fn from(episode: PodcastEpisode) -> Self {
+        AirsonicTrack {
+            id: episode.id.into(),
+            details: TrackDetails {
+                title: Some(episode.title),
+                artist: Some(episode.artist),
+                album: Some(episode.album),
+                duration: Some(episode.duration),
+                cover_art: Some(episode.cover_art),
+                is_podcast: Some(true),
+                album_id: None,
+                starred: None,
+                track: None,
+                artists: vec![],
+                is_stream: None,
+                is_unavailable: None,
+                play_count: None,
+                replay_gain: None,
+                stream_url: None,
             }
         }
     }

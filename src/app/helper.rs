@@ -1,12 +1,13 @@
 use std::collections::HashMap;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Ok, Result};
 use futures::stream::{FuturesOrdered, TryStreamExt};
 use tokio::sync::OnceCell;
 use url::Url;
 
 use crate::mpd::types::PlaylistItem;
 use crate::mpd::Mpd;
+use crate::podcasts::Podcasts;
 use crate::subsonic::Subsonic;
 use crate::subsonic::types::{RadioId, RadioStation};
 
@@ -22,12 +23,17 @@ type RadioStationMap = HashMap<RadioId, RadioStation>;
 
 pub struct Resolver<'a> {
     subsonic: &'a Subsonic,
+    podcasts: Option<&'a Podcasts>,
     stations: OnceCell<RadioStationMap>,
 }
 
 impl<'a> Resolver<'a> {
-    pub fn new(subsonic: &'a Subsonic) -> Self {
-        Resolver { subsonic, stations: Default::default() }
+    pub fn new(subsonic: &'a Subsonic, podcasts: Option<&'a Podcasts>) -> Self {
+        Resolver {
+            subsonic,
+            podcasts,
+            stations: Default::default(),
+        }
     }
 
     pub async fn stream_urls_for(&self, ids: &[AirsonicTrackId]) -> Result<Vec<Url>> {
@@ -40,7 +46,13 @@ impl<'a> Resolver<'a> {
     pub async fn stream_url_for_id(&self, id: &AirsonicTrackId) -> Result<Url> {
         match id {
             AirsonicTrackId::Track(id) => {
-                Ok(self.subsonic.stream_url(id)?)
+                if let Some(podcasts) = self.podcasts {
+                    if podcasts.matches(id) {
+                        return podcasts.stream_url(id);
+                    }
+                }
+
+                self.subsonic.stream_url(id)
             }
             AirsonicTrackId::Radio(id) => {
                 let station = self.resolve_radio_id(id).await?;
@@ -60,6 +72,17 @@ impl<'a> Resolver<'a> {
         let url = Url::parse(&item.file).with_context(|| {
             format!("parsing playlist item url: {}", item.file)
         })?;
+
+        if let Some(podcasts) = self.podcasts {
+            if let Some(id) = podcasts.track_id_from_stream_url(&url) {
+                let episode = podcasts.get_podcast_episode(&id).await?;
+
+                let mut track: AirsonicTrack = episode.into();
+                track.details.stream_url = Some(podcasts.stream_url(&id)?);
+
+                return Ok(track);
+            }
+        }
 
         if let Some(id) = self.subsonic.track_id_from_stream_url(&url) {
             let track = self.subsonic.get_track(&id).await?;
