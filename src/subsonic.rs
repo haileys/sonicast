@@ -152,9 +152,7 @@ impl Subsonic {
     }
 
     pub fn track_id_from_stream_url(&self, url: &Url) -> Option<TrackId> {
-        let base = self.base_url();
-
-        if base.host() != url.host() {
+        if self.base_url().origin() != url.origin() {
             return None;
         }
 
