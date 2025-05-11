@@ -4,23 +4,23 @@ use std::str::FromStr;
 
 use anyhow::Result;
 
-mod app;
 mod logging;
 mod mpd;
+mod player;
+mod podcasts;
 mod subsonic;
 mod util;
-mod podcasts;
 
 #[tokio::main]
 async fn main() -> Result<()> {
     logging::init();
 
     let config = config();
-    app::run(&config).await
+    player::run(&config).await
 }
 
-fn config() -> app::Config {
-    app::Config {
+fn config() -> player::Config {
+    player::Config {
         listen: env("SONICAST_LISTEN"),
         subsonic_url: env("SUBSONIC_URL"),
         mpd: mpd(),

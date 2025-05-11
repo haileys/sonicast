@@ -9,7 +9,7 @@ use tokio::sync::watch;
 use crate::logging;
 use crate::mpd::Mpd;
 use crate::mpd::types::{MpdEvent, PlaybackState, ReplayGainMode};
-use crate::app::ServerMsg;
+use crate::player::ServerMsg;
 
 use super::{commands, Session};
 

@@ -1,7 +1,7 @@
 use anyhow::{Result, Context};
 use serde::{Deserialize, Serialize};
 
-use crate::app::{Session, Command, helper};
+use crate::player::{Session, Command, helper};
 use crate::mpd::types::{PlaybackState, Seconds};
 use crate::mpd::{self, Mpd};
 
